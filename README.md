@@ -1,0 +1,2 @@
+# INFRA-LOG-DK
+scripts
