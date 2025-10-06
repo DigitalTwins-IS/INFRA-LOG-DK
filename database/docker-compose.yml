@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgis/postgis:15-3.3
+    container_name: dgt-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dgt_user
+      POSTGRES_PASSWORD: dgt_pass
+      POSTGRES_DB: digital_twins_db
+    ports:
+      - "5437:5432"
+    volumes:
+      - bdsoftware:/var/lib/postgresql/data
+      - ../init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dgt_user -d digital_twins_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+volumes:
+  bdsoftware:

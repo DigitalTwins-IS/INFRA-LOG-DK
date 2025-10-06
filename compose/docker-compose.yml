@@ -1,0 +1,199 @@
+version: '3.8'
+
+services:
+  postgres-db:
+    image: postgis/postgis:17-3.5
+    container_name: postgres-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-digital_twins_db}
+      POSTGRES_USER: ${POSTGRES_USER:-dgt_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dgt_pass}
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "${POSTGRES_PORT:-5437}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - digital-twins-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dgt_user} -d ${POSTGRES_DB:-digital_twins_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  ms-auth-py:
+    build:
+      context: ../../MS-AUTH-PY
+      dockerfile: Dockerfile
+    image: digitaltwins/logistics:ms-auth-py-v1.0.0
+    container_name: ms-auth-py
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dgt_user}:${POSTGRES_PASSWORD:-dgt_pass}@postgres-db:5432/${POSTGRES_DB:-digital_twins_db}
+      SECRET_KEY: ${SECRET_KEY:-your-super-secret-key-change-in-production-min-32-chars}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      SERVICE_HOST: 0.0.0.0
+      SERVICE_PORT: 8000
+    ports:
+      - "8001:8000"
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    networks:
+      - digital-twins-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  ms-geo-py:
+    build:
+      context: ../../MS-GEO-PY
+      dockerfile: Dockerfile
+    image: digitaltwins/logistics:ms-geo-py-v1.0.0
+    container_name: ms-geo-py
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dgt_user}:${POSTGRES_PASSWORD:-dgt_pass}@postgres-db:5432/${POSTGRES_DB:-digital_twins_db}
+      SECRET_KEY: ${SECRET_KEY:-your-super-secret-key-change-in-production-min-32-chars}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      SERVICE_HOST: 0.0.0.0
+      SERVICE_PORT: 8000
+    ports:
+      - "8003:8000"
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      ms-auth-py:
+        condition: service_healthy
+    networks:
+      - digital-twins-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  ms-user-py:
+    build:
+      context: ../../MS-USER-PY
+      dockerfile: Dockerfile
+    image: digitaltwins/logistics:ms-user-py-v1.0.0
+    container_name: ms-user-py
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dgt_user}:${POSTGRES_PASSWORD:-dgt_pass}@postgres-db:5432/${POSTGRES_DB:-digital_twins_db}
+      SECRET_KEY: ${SECRET_KEY:-your-super-secret-key-change-in-production-min-32-chars}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      MS_GEO_URL: http://ms-geo-py:8000
+      MS_AUTH_URL: http://ms-auth-py:8000
+      SERVICE_HOST: 0.0.0.0
+      SERVICE_PORT: 8000
+      MAX_SHOPKEEPERS_PER_SELLER: ${MAX_SHOPKEEPERS_PER_SELLER:-80}
+    ports:
+      - "8002:8000"
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      ms-auth-py:
+        condition: service_healthy
+      ms-geo-py:
+        condition: service_healthy
+    networks:
+      - digital-twins-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  ms-report-py:
+    build:
+      context: ../../MS-REPORT-PY
+      dockerfile: Dockerfile
+    image: digitaltwins/logistics:ms-report-py-v1.0.0
+    container_name: ms-report-py
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-your-super-secret-key-change-in-production-min-32-chars}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      MS_AUTH_URL: http://ms-auth-py:8000
+      MS_GEO_URL: http://ms-geo-py:8000
+      MS_USER_URL: http://ms-user-py:8000
+      SERVICE_HOST: 0.0.0.0
+      SERVICE_PORT: 8000
+    ports:
+      - "8004:8000"
+    depends_on:
+      ms-auth-py:
+        condition: service_healthy
+      ms-geo-py:
+        condition: service_healthy
+      ms-user-py:
+        condition: service_healthy
+    networks:
+      - digital-twins-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  api-gateway:
+    image: nginx:alpine
+    container_name: api-gateway
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - ms-auth-py
+      - ms-geo-py
+      - ms-user-py
+      - ms-report-py
+    networks:
+      - digital-twins-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../../FR-LOG-RT
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: http://localhost:8080/api
+    image: digitaltwins/logistics:frontend-v1.0.0
+    container_name: frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - api-gateway
+    networks:
+      - digital-twins-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+networks:
+  digital-twins-network:
+    driver: bridge
+    name: digital-twins-network
+
+volumes:
+  postgres_data:
+    name: digital-twins-db-data
