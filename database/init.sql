@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS users (
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
-    role VARCHAR(50) DEFAULT 'admin' CHECK (role IN ('admin', 'seller')),
+    role VARCHAR(50) DEFAULT 'admin' CHECK (role IN ('admin', 'tendero', 'vendedor')),
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -314,9 +314,13 @@ INSERT INTO zones (name, city_id, color, description) VALUES
     ('Sur', 3, '#27ae60', 'Zona sur de Cali - Pance, Ciudad Jardín')
 ON CONFLICT (name, city_id) DO NOTHING;
 
+-- Usuarios iniciales del sistema
+-- Contraseña por defecto: Admin123!
 INSERT INTO users (name, email, password_hash, role) VALUES 
-    ('Administrador Principal', 'admin@digitaltwins.com', '$2b$12$p.Pi.XuBd1PmOtf18BCcau6S..W4gffdf..h6RQ8VdmBBcEYEdNfm', 'admin'),
-    ('Admin Bogotá', 'admin.bogota@digitaltwins.com', '$2b$12$p.Pi.XuBd1PmOtf18BCcau6S..W4gffdf..h6RQ8VdmBBcEYEdNfm', 'admin')
+    ('Administrador Principal', 'admin@digitaltwins.com', '$2b$12$GwXkoxF7JFaNKvPzHuuriOP.s492DNA5okoRoULFIbFhW0KlYnoje', 'ADMIN'),
+    ('Admin Bogotá', 'admin.bogota@digitaltwins.com', '$2b$12$GwXkoxF7JFaNKvPzHuuriOP.s492DNA5okoRoULFIbFhW0KlYnoje', 'ADMIN'),
+    ('Tendero Principal', 'tendero@digitaltwins.com', '$2b$12$GwXkoxF7JFaNKvPzHuuriOP.s492DNA5okoRoULFIbFhW0KlYnoje', 'TENDERO'),
+    ('Vendedor Principal', 'vendedor@digitaltwins.com', '$2b$12$GwXkoxF7JFaNKvPzHuuriOP.s492DNA5okoRoULFIbFhW0KlYnoje', 'VENDEDOR')
 ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO sellers (name, email, phone, address, zone_id, user_id) VALUES 
