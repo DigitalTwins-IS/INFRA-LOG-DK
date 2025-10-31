@@ -114,6 +114,36 @@ services:
       start_period: 40s
     restart: unless-stopped
 
+  ms-product-py:
+    build:
+      context: ../../MS-PRODUCT-PY
+      dockerfile: Dockerfile
+    image: digitaltwins/logistics:ms-product-py-v1.0.0
+    container_name: ms-product-py
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dgt_user}:${POSTGRES_PASSWORD:-dgt_pass}@postgres-db:5432/${POSTGRES_DB:-digital_twins_db}
+      SECRET_KEY: ${SECRET_KEY:-your-super-secret-key-change-in-production-min-32-chars}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      MS_AUTH_URL: http://ms-auth-py:8000
+      SERVICE_HOST: 0.0.0.0
+      SERVICE_PORT: 8005
+    ports:
+      - "8005:8005"
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      ms-auth-py:
+        condition: service_healthy
+    networks:
+      - digital-twins-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
   ms-report-py:
     build:
       context: ../../MS-REPORT-PY
@@ -126,6 +156,7 @@ services:
       MS_AUTH_URL: http://ms-auth-py:8000
       MS_GEO_URL: http://ms-geo-py:8000
       MS_USER_URL: http://ms-user-py:8000
+      MS_PRODUCT_URL: http://ms-product-py:8005
       SERVICE_HOST: 0.0.0.0
       SERVICE_PORT: 8000
     ports:
@@ -136,6 +167,8 @@ services:
       ms-geo-py:
         condition: service_healthy
       ms-user-py:
+        condition: service_healthy
+      ms-product-py:
         condition: service_healthy
     networks:
       - digital-twins-network
@@ -158,6 +191,7 @@ services:
       - ms-auth-py
       - ms-geo-py
       - ms-user-py
+      - ms-product-py
       - ms-report-py
     networks:
       - digital-twins-network

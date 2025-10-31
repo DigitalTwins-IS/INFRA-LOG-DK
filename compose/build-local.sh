@@ -14,31 +14,37 @@ VERSION="v1.0.0"
 echo -e "${BLUE}BUILD LOCAL - DIGITAL TWINS${NC}"
 echo
 
-echo -e "${BLUE}[1/5] MS-AUTH-PY${NC}"
+echo -e "${BLUE}[1/6] MS-AUTH-PY${NC}"
 cd ../../MS-AUTH-PY
 docker build -t ${DOCKER_REGISTRY}:ms-auth-py-${VERSION} .
 docker tag ${DOCKER_REGISTRY}:ms-auth-py-${VERSION} ${DOCKER_REGISTRY}:ms-auth-py-latest
 echo -e "${GREEN}✓ MS-AUTH-PY${NC}"
 
-echo -e "${BLUE}[2/5] MS-GEO-PY${NC}"
+echo -e "${BLUE}[2/6] MS-GEO-PY${NC}"
 cd ../MS-GEO-PY
 docker build -t ${DOCKER_REGISTRY}:ms-geo-py-${VERSION} .
 docker tag ${DOCKER_REGISTRY}:ms-geo-py-${VERSION} ${DOCKER_REGISTRY}:ms-geo-py-latest
 echo -e "${GREEN}✓ MS-GEO-PY${NC}"
 
-echo -e "${BLUE}[3/5] MS-USER-PY${NC}"
+echo -e "${BLUE}[3/6] MS-USER-PY${NC}"
 cd ../MS-USER-PY
 docker build -t ${DOCKER_REGISTRY}:ms-user-py-${VERSION} .
 docker tag ${DOCKER_REGISTRY}:ms-user-py-${VERSION} ${DOCKER_REGISTRY}:ms-user-py-latest
 echo -e "${GREEN}✓ MS-USER-PY${NC}"
 
-echo -e "${BLUE}[4/5] MS-REPORT-PY${NC}"
+echo -e "${BLUE}[4/6] MS-REPORT-PY${NC}"
 cd ../MS-REPORT-PY
 docker build -t ${DOCKER_REGISTRY}:ms-report-py-${VERSION} .
 docker tag ${DOCKER_REGISTRY}:ms-report-py-${VERSION} ${DOCKER_REGISTRY}:ms-report-py-latest
 echo -e "${GREEN}✓ MS-REPORT-PY${NC}"
 
-echo -e "${BLUE}[5/5] FRONTEND${NC}"
+echo -e "${BLUE}[5/6] MS-PRODUCT-PY${NC}"
+cd ../MS-PRODUCT-PY
+docker build -t ${DOCKER_REGISTRY}:ms-product-py-${VERSION} .
+docker tag ${DOCKER_REGISTRY}:ms-product-py-${VERSION} ${DOCKER_REGISTRY}:ms-product-py-latest
+echo -e "${GREEN}✓ MS-PRODUCT-PY${NC}"
+
+echo -e "${BLUE}[6/6] FRONTEND${NC}"
 cd ../FR-LOG-RT
 docker build -t ${DOCKER_REGISTRY}:frontend-${VERSION} .
 docker tag ${DOCKER_REGISTRY}:frontend-${VERSION} ${DOCKER_REGISTRY}:frontend-latest
