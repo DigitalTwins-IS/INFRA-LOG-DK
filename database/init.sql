@@ -27,11 +27,27 @@ CREATE TABLE IF NOT EXISTS users (
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
-    role VARCHAR(50) DEFAULT 'admin' CHECK (role IN ('admin', 'tendero', 'vendedor')),
+    role VARCHAR(50) DEFAULT 'ADMIN' CHECK (role IN ('ADMIN', 'TENDERO', 'VENDEDOR')),
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Alinear constraint de roles a mayúsculas por compatibilidad con frontend/backend
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints 
+    WHERE table_name='users' AND constraint_type='CHECK' AND constraint_name='users_role_check'
+  ) THEN
+    ALTER TABLE users DROP CONSTRAINT users_role_check;
+  END IF;
+EXCEPTION WHEN undefined_object THEN
+  -- ignorar si no existe
+  NULL;
+END$$;
+
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('ADMIN', 'TENDERO', 'VENDEDOR'));
 
 CREATE TABLE IF NOT EXISTS cities (
     id SERIAL PRIMARY KEY,
@@ -434,6 +450,9 @@ INSERT INTO assignments (seller_id, shopkeeper_id, assigned_by) VALUES
     (4, 8, 2), (4, 9, 2)
 ON CONFLICT ON CONSTRAINT unique_active_assignment DO NOTHING;
 
+UPDATE users 
+SET password_hash = '$2b$12$GwXkoxF7JFaNKvPzHuuriOP.s492DNA5okoRoULFIbFhW0KlYnoje'
+WHERE email = 'admin@digitaltwins.com';
 -- Inventory seed (from first file)
 INSERT INTO shopkeeper_inventory (shopkeeper_id, product_id, stock, min_stock, max_stock) VALUES
     (1, 1, 50, 20, 100),
