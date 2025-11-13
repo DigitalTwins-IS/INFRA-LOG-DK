@@ -159,6 +159,22 @@ CREATE TABLE IF NOT EXISTS inventories (
     UNIQUE(shopkeeper_id, product_id)
 );
 
+-- HU21: Tabla de Visitas - Agendar visitas basadas en inventario
+CREATE TABLE IF NOT EXISTS visits (
+    id SERIAL PRIMARY KEY,
+    seller_id INTEGER NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
+    shopkeeper_id INTEGER NOT NULL REFERENCES shopkeepers(id) ON DELETE CASCADE,
+    scheduled_date TIMESTAMP WITH TIME ZONE NOT NULL,
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'cancelled')),
+    reason VARCHAR(255) DEFAULT 'reabastecimiento',
+    notes TEXT,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    cancelled_at TIMESTAMP WITH TIME ZONE,
+    cancelled_reason TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 4) Triggers that use update_updated_at_column or update_shopkeeper_location
 CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -182,6 +198,9 @@ CREATE TRIGGER update_products_updated_at BEFORE UPDATE ON products
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_inventories_updated_at BEFORE UPDATE ON inventories
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_visits_updated_at BEFORE UPDATE ON visits
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_shopkeeper_location_trigger
@@ -210,6 +229,11 @@ CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 CREATE INDEX IF NOT EXISTS idx_products_active ON products(is_active);
 CREATE INDEX IF NOT EXISTS idx_inventories_shopkeeper ON inventories(shopkeeper_id);
 CREATE INDEX IF NOT EXISTS idx_inventories_product ON inventories(product_id);
+CREATE INDEX IF NOT EXISTS idx_visits_seller_id ON visits(seller_id);
+CREATE INDEX IF NOT EXISTS idx_visits_shopkeeper_id ON visits(shopkeeper_id);
+CREATE INDEX IF NOT EXISTS idx_visits_scheduled_date ON visits(scheduled_date);
+CREATE INDEX IF NOT EXISTS idx_visits_status ON visits(status);
+CREATE INDEX IF NOT EXISTS idx_visits_seller_status ON visits(seller_id, status);
 
 -- 6) Views
 CREATE OR REPLACE VIEW v_sellers_full AS
@@ -435,11 +459,12 @@ INSERT INTO users (name, email, password_hash, role) VALUES
 ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO sellers (name, email, phone, address, zone_id, user_id) VALUES 
-    ('Juan Pérez', 'juan.perez@vendedor.com', '3001234567', 'Calle 80 #12-34, Bogotá', 1, 1),
-    ('María García', 'maria.garcia@vendedor.com', '3007654321', 'Carrera 15 #93-47, Bogotá', 2, 1),
-    ('Carlos López', 'carlos.lopez@vendedor.com', '3009876543', 'Avenida 68 #25-30, Bogotá', 3, 1),
-    ('Ana Rodríguez', 'ana.rodriguez@vendedor.com', '3005555555', 'Calle 50 #40-20, Medellín', 4, 2),
-    ('Pedro Martínez', 'pedro.martinez@vendedor.com', '3006666666', 'Carrera 43 #20-15, Medellín', 5, 2)
+    ('Vendedor Principal', 'vendedor@digitaltwins.com', '3001234567', 'Calle 80 #12-34, Bogotá', 1, 4),
+    ('Juan Pérez', 'juan.perez@vendedor.com', '3001234567', 'Calle 80 #12-34, Bogotá', 1, NULL),
+    ('María García', 'maria.garcia@vendedor.com', '3007654321', 'Carrera 15 #93-47, Bogotá', 2, NULL),
+    ('Carlos López', 'carlos.lopez@vendedor.com', '3009876543', 'Avenida 68 #25-30, Bogotá', 3, NULL),
+    ('Ana Rodríguez', 'ana.rodriguez@vendedor.com', '3005555555', 'Calle 50 #40-20, Medellín', 4, NULL),
+    ('Pedro Martínez', 'pedro.martinez@vendedor.com', '3006666666', 'Carrera 43 #20-15, Medellín', 5, NULL)
 ON CONFLICT (email) DO NOTHING;
 
 -- Products: prefer the more detailed prices from the first file (kept is_active = TRUE)
@@ -469,32 +494,96 @@ WHERE NOT EXISTS (
 );
 
 -- CORRECCIÓN: Assignments - insertar solo si no existe una asignación activa
+-- Usar emails para encontrar los IDs correctos de sellers y shopkeepers
+-- Asignar tenderos al "Vendedor Principal" (vendedor@digitaltwins.com)
 INSERT INTO assignments (seller_id, shopkeeper_id, assigned_by) 
-SELECT * FROM (VALUES 
-    (1, 1, 1), (1, 2, 1), (1, 3, 1),
-    (2, 4, 1), (2, 5, 1),
-    (3, 6, 1), (3, 7, 1),
-    (4, 8, 2), (4, 9, 2)
-) AS v(seller_id, shopkeeper_id, assigned_by)
-WHERE NOT EXISTS (
+SELECT 
+    s.id as seller_id,
+    sk.id as shopkeeper_id,
+    (SELECT id FROM users WHERE email = 'admin@digitaltwins.com' LIMIT 1) as assigned_by
+FROM sellers s
+CROSS JOIN shopkeepers sk
+WHERE s.email = 'vendedor@digitaltwins.com'
+  AND sk.email IN ('laesperanza@tienda.com', 'sanjose@farmacia.com', 'buenpan@panaderia.com', 'elahorro@super.com', 'constructor@ferreteria.com')
+  AND NOT EXISTS (
     SELECT 1 FROM assignments 
-    WHERE assignments.seller_id = v.seller_id 
-    AND assignments.shopkeeper_id = v.shopkeeper_id 
+    WHERE assignments.seller_id = s.id 
+    AND assignments.shopkeeper_id = sk.id 
     AND assignments.is_active = TRUE
-);
+  );
+
+-- Asignaciones para otros vendedores (usando emails)
+INSERT INTO assignments (seller_id, shopkeeper_id, assigned_by) 
+SELECT 
+    s.id as seller_id,
+    sk.id as shopkeeper_id,
+    (SELECT id FROM users WHERE email = 'admin@digitaltwins.com' LIMIT 1) as assigned_by
+FROM sellers s
+CROSS JOIN shopkeepers sk
+WHERE (s.email = 'juan.perez@vendedor.com' AND sk.email IN ('laesperanza@tienda.com', 'sanjose@farmacia.com', 'buenpan@panaderia.com'))
+   OR (s.email = 'maria.garcia@vendedor.com' AND sk.email IN ('elahorro@super.com', 'constructor@ferreteria.com'))
+   OR (s.email = 'carlos.lopez@vendedor.com' AND sk.email IN ('labendicion@miscelanea.com', 'sanmartin@veterinaria.com'))
+   OR (s.email = 'ana.rodriguez@vendedor.com' AND sk.email IN ('lasalud@drogueria.com'))
+   OR (s.email = 'pedro.martinez@vendedor.com' AND sk.email IN ('buencorte@carniceria.com'))
+  AND NOT EXISTS (
+    SELECT 1 FROM assignments 
+    WHERE assignments.seller_id = s.id 
+    AND assignments.shopkeeper_id = sk.id 
+    AND assignments.is_active = TRUE
+  );
 
 UPDATE users 
 SET password_hash = '$2b$12$GwXkoxF7JFaNKvPzHuuriOP.s492DNA5okoRoULFIbFhW0KlYnoje'
 WHERE email = 'admin@digitaltwins.com';
 
 -- CORRECCIÓN: Inventory seed - usar tabla 'inventories' y campo 'current_stock'
-INSERT INTO inventories (shopkeeper_id, product_id, current_stock, min_stock, max_stock, unit_price) VALUES
-    (1, 1, 50, 20, 100, 2500.00),
-    (1, 2, 30, 10, 80, 3200.50),
-    (1, 3, 25, 15, 60, 4200.00),
-    (2, 3, 40, 20, 100, 4200.00),
-    (3, 2, 20, 10, 50, 3200.50)
-ON CONFLICT (shopkeeper_id, product_id) DO NOTHING;
+-- Productos para tenderos asignados al "Vendedor Principal" (vendedor@digitaltwins.com)
+-- Tenderos asignados: 1 (La Esperanza), 2 (San José), 3 (Buen Pan), 4 (El Ahorro), 5 (Constructor)
+-- IMPORTANTE: Agregar productos con bajo stock (current_stock < min_stock) para que aparezcan en visitas
+INSERT INTO inventories (shopkeeper_id, product_id, current_stock, min_stock, max_stock, unit_price, product_name, product_category) VALUES
+    -- Shopkeeper 1: La Esperanza (laesperanza@tienda.com)
+    (1, 1, 50, 20, 100, 2500.00, 'Manzana Roja', 'FRUTAS Y VEGETALES'),
+    (1, 2, 30, 10, 80, 3200.50, 'Arroz Integral', 'GRANOS'),
+    (1, 3, 25, 15, 60, 4200.00, 'Leche Entera', 'LACTEOS'),
+    -- Productos con BAJO STOCK para shopkeeper 1
+    (1, 4, 5, 10, 50, 1500.75, 'Chocolate de Leche', 'DULCERIA'),  -- Bajo stock: 5 < 10
+    (1, 5, 8, 15, 60, 1800.25, 'Zanahoria', 'FRUTAS Y VEGETALES'),  -- Bajo stock: 8 < 15
+    
+    -- Shopkeeper 2: San José (sanjose@farmacia.com)
+    (2, 3, 40, 20, 100, 4200.00, 'Leche Entera', 'LACTEOS'),
+    -- Productos con BAJO STOCK para shopkeeper 2
+    (2, 1, 12, 20, 100, 2500.00, 'Manzana Roja', 'FRUTAS Y VEGETALES'),  -- Bajo stock: 12 < 20
+    (2, 2, 7, 10, 80, 3200.50, 'Arroz Integral', 'GRANOS'),  -- Bajo stock: 7 < 10
+    (2, 4, 3, 10, 50, 1500.75, 'Chocolate de Leche', 'DULCERIA'),  -- Bajo stock: 3 < 10
+    
+    -- Shopkeeper 3: Buen Pan (buenpan@panaderia.com)
+    (3, 2, 20, 10, 50, 3200.50, 'Arroz Integral', 'GRANOS'),
+    -- Productos con BAJO STOCK para shopkeeper 3
+    (3, 1, 8, 20, 100, 2500.00, 'Manzana Roja', 'FRUTAS Y VEGETALES'),  -- Bajo stock: 8 < 20
+    (3, 3, 10, 15, 60, 4200.00, 'Leche Entera', 'LACTEOS'),  -- Bajo stock: 10 < 15
+    (3, 5, 6, 15, 60, 1800.25, 'Zanahoria', 'FRUTAS Y VEGETALES'),  -- Bajo stock: 6 < 15
+    
+    -- Shopkeeper 4: El Ahorro (elahorro@super.com)
+    -- Productos con BAJO STOCK para shopkeeper 4
+    (4, 1, 15, 20, 100, 2500.00, 'Manzana Roja', 'FRUTAS Y VEGETALES'),  -- Bajo stock: 15 < 20
+    (4, 2, 8, 10, 80, 3200.50, 'Arroz Integral', 'GRANOS'),  -- Bajo stock: 8 < 10
+    (4, 3, 12, 15, 60, 4200.00, 'Leche Entera', 'LACTEOS'),  -- Bajo stock: 12 < 15
+    (4, 4, 4, 10, 50, 1500.75, 'Chocolate de Leche', 'DULCERIA'),  -- Bajo stock: 4 < 10
+    
+    -- Shopkeeper 5: Constructor (constructor@ferreteria.com)
+    -- Productos con BAJO STOCK para shopkeeper 5
+    (5, 1, 10, 20, 100, 2500.00, 'Manzana Roja', 'FRUTAS Y VEGETALES'),  -- Bajo stock: 10 < 20
+    (5, 2, 5, 10, 80, 3200.50, 'Arroz Integral', 'GRANOS'),  -- Bajo stock: 5 < 10
+    (5, 3, 9, 15, 60, 4200.00, 'Leche Entera', 'LACTEOS'),  -- Bajo stock: 9 < 15
+    (5, 5, 7, 15, 60, 1800.25, 'Zanahoria', 'FRUTAS Y VEGETALES')  -- Bajo stock: 7 < 15
+ON CONFLICT (shopkeeper_id, product_id) DO UPDATE
+SET 
+    current_stock = EXCLUDED.current_stock,
+    min_stock = EXCLUDED.min_stock,
+    max_stock = EXCLUDED.max_stock,
+    unit_price = EXCLUDED.unit_price,
+    product_name = EXCLUDED.product_name,
+    product_category = EXCLUDED.product_category;
 
 -- Done
 
