@@ -175,6 +175,19 @@ CREATE TABLE IF NOT EXISTS visits (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- HU16: Tabla de Incidencias de la visita - registrar  durante visitas
+CREATE TABLE IF NOT EXISTS seller_incidents (
+    id SERIAL PRIMARY KEY,
+    seller_id INTEGER NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
+    shopkeeper_id INTEGER REFERENCES shopkeepers(id) ON DELETE SET NULL,
+    visit_id INTEGER REFERENCES visits(id) ON DELETE SET NULL,
+    type VARCHAR(30) NOT NULL CHECK (type IN ('absence', 'delay', 'non_compliance')),
+    description TEXT,
+    incident_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 4) Triggers that use update_updated_at_column or update_shopkeeper_location
 CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -207,6 +220,10 @@ CREATE TRIGGER update_shopkeeper_location_trigger
     BEFORE INSERT OR UPDATE ON shopkeepers
     FOR EACH ROW EXECUTE FUNCTION update_shopkeeper_location();
 
+CREATE TRIGGER update_seller_incidents_updated_at 
+BEFORE UPDATE ON seller_incidents
+FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 -- 5) Indexes
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
@@ -234,6 +251,7 @@ CREATE INDEX IF NOT EXISTS idx_visits_shopkeeper_id ON visits(shopkeeper_id);
 CREATE INDEX IF NOT EXISTS idx_visits_scheduled_date ON visits(scheduled_date);
 CREATE INDEX IF NOT EXISTS idx_visits_status ON visits(status);
 CREATE INDEX IF NOT EXISTS idx_visits_seller_status ON visits(seller_id, status);
+CREATE INDEX IF NOT EXISTS idx_seller_incidents_seller_id ON seller_incidents(seller_id);
 
 -- 6) Views
 CREATE OR REPLACE VIEW v_sellers_full AS
