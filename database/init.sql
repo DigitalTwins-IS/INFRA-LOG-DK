@@ -32,6 +32,15 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR(255) NOT NULL,
     role VARCHAR(50) DEFAULT 'ADMIN' CHECK (role IN ('ADMIN', 'TENDERO', 'VENDEDOR')),
     is_active BOOLEAN DEFAULT TRUE,
+    -- Campos para verificación adicional de restablecimiento de contraseña
+    phone_number VARCHAR(20) NULL,
+    security_question VARCHAR(255) NULL,
+    security_answer_hash VARCHAR(255) NULL,
+    -- Campos para restablecimiento de contraseña
+    reset_token VARCHAR(255) NULL,
+    reset_code VARCHAR(6) NULL,
+    reset_token_expires TIMESTAMP WITH TIME ZONE NULL,
+    reset_code_expires TIMESTAMP WITH TIME ZONE NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -210,6 +219,10 @@ CREATE TRIGGER update_shopkeeper_location_trigger
 -- 5) Indexes
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+-- Índices para restablecimiento de contraseña
+CREATE INDEX IF NOT EXISTS idx_users_phone_number ON users(phone_number) WHERE phone_number IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users(reset_token) WHERE reset_token IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_users_reset_code ON users(reset_code) WHERE reset_code IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_zones_city_id ON zones(city_id);
 CREATE INDEX IF NOT EXISTS idx_zones_name ON zones(name);
 CREATE INDEX IF NOT EXISTS idx_sellers_zone_id ON sellers(zone_id);
