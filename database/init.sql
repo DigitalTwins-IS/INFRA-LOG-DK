@@ -616,5 +616,59 @@ SET
     product_name = EXCLUDED.product_name,
     product_category = EXCLUDED.product_category;
 
+-- Visitas de muestra para review
+-- Visitas con diferentes estados y fechas para demostración
+INSERT INTO visits (seller_id, shopkeeper_id, scheduled_date, status, reason, notes, completed_at, cancelled_at, cancelled_reason) 
+SELECT 
+    s.id as seller_id,
+    sk.id as shopkeeper_id,
+    scheduled_date,
+    status,
+    reason,
+    notes,
+    completed_at,
+    cancelled_at,
+    cancelled_reason
+FROM (VALUES 
+    -- Visitas completadas (pasadas)
+    ('vendedor@digitaltwins.com', 'laesperanza@tienda.com', CURRENT_TIMESTAMP - INTERVAL '5 days', 'completed', 'reabastecimiento', 'Visita completada exitosamente. Stock actualizado.', CURRENT_TIMESTAMP - INTERVAL '5 days' + INTERVAL '2 hours', NULL, NULL),
+    ('vendedor@digitaltwins.com', 'sanjose@farmacia.com', CURRENT_TIMESTAMP - INTERVAL '3 days', 'completed', 'reabastecimiento', 'Productos entregados correctamente.', CURRENT_TIMESTAMP - INTERVAL '3 days' + INTERVAL '1 hour', NULL, NULL),
+    ('juan.perez@vendedor.com', 'buenpan@panaderia.com', CURRENT_TIMESTAMP - INTERVAL '7 days', 'completed', 'reabastecimiento', 'Inventario verificado y actualizado.', CURRENT_TIMESTAMP - INTERVAL '7 days' + INTERVAL '3 hours', NULL, NULL),
+    ('maria.garcia@vendedor.com', 'elahorro@super.com', CURRENT_TIMESTAMP - INTERVAL '2 days', 'completed', 'reabastecimiento', 'Visita realizada según lo programado.', CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '1 hour 30 minutes', NULL, NULL),
+    ('carlos.lopez@vendedor.com', 'labendicion@miscelanea.com', CURRENT_TIMESTAMP - INTERVAL '10 days', 'completed', 'reabastecimiento', 'Todos los productos fueron entregados.', CURRENT_TIMESTAMP - INTERVAL '10 days' + INTERVAL '2 hours', NULL, NULL),
+    
+    -- Visitas pendientes (futuras)
+    ('vendedor@digitaltwins.com', 'constructor@ferreteria.com', CURRENT_TIMESTAMP + INTERVAL '2 days', 'pending', 'reabastecimiento', 'Visita programada para reabastecimiento de inventario.', NULL, NULL, NULL),
+    ('juan.perez@vendedor.com', 'laesperanza@tienda.com', CURRENT_TIMESTAMP + INTERVAL '5 days', 'pending', 'reabastecimiento', 'Revisión de stock pendiente.', NULL, NULL, NULL),
+    ('maria.garcia@vendedor.com', 'constructor@ferreteria.com', CURRENT_TIMESTAMP + INTERVAL '3 days', 'pending', 'reabastecimiento', 'Entrega programada de productos.', NULL, NULL, NULL),
+    ('ana.rodriguez@vendedor.com', 'lasalud@drogueria.com', CURRENT_TIMESTAMP + INTERVAL '7 days', 'pending', 'reabastecimiento', 'Visita de seguimiento programada.', NULL, NULL, NULL),
+    ('pedro.martinez@vendedor.com', 'buencorte@carniceria.com', CURRENT_TIMESTAMP + INTERVAL '4 days', 'pending', 'reabastecimiento', 'Revisión de inventario pendiente.', NULL, NULL, NULL),
+    
+    -- Visitas canceladas
+    ('vendedor@digitaltwins.com', 'buenpan@panaderia.com', CURRENT_TIMESTAMP - INTERVAL '1 day', 'cancelled', 'reabastecimiento', 'Visita cancelada por solicitud del tendero.', NULL, CURRENT_TIMESTAMP - INTERVAL '1 day' + INTERVAL '30 minutes', 'Tendero no disponible en la fecha programada'),
+    ('juan.perez@vendedor.com', 'sanjose@farmacia.com', CURRENT_TIMESTAMP - INTERVAL '6 days', 'cancelled', 'reabastecimiento', 'Cancelación por problemas de logística.', NULL, CURRENT_TIMESTAMP - INTERVAL '6 days' + INTERVAL '1 hour', 'Problemas de transporte'),
+    ('carlos.lopez@vendedor.com', 'sanmartin@veterinaria.com', CURRENT_TIMESTAMP + INTERVAL '1 day', 'cancelled', 'reabastecimiento', 'Visita cancelada por el vendedor.', NULL, CURRENT_TIMESTAMP - INTERVAL '2 days', 'Cambio de ruta del vendedor'),
+    
+    -- Más visitas completadas para tener mejor muestra
+    ('vendedor@digitaltwins.com', 'elahorro@super.com', CURRENT_TIMESTAMP - INTERVAL '8 days', 'completed', 'reabastecimiento', 'Visita exitosa, inventario actualizado.', CURRENT_TIMESTAMP - INTERVAL '8 days' + INTERVAL '2 hours', NULL, NULL),
+    ('juan.perez@vendedor.com', 'sanjose@farmacia.com', CURRENT_TIMESTAMP - INTERVAL '12 days', 'completed', 'reabastecimiento', 'Productos entregados y verificados.', CURRENT_TIMESTAMP - INTERVAL '12 days' + INTERVAL '1 hour 45 minutes', NULL, NULL),
+    ('maria.garcia@vendedor.com', 'constructor@ferreteria.com', CURRENT_TIMESTAMP - INTERVAL '15 days', 'completed', 'reabastecimiento', 'Visita completada según lo planificado.', CURRENT_TIMESTAMP - INTERVAL '15 days' + INTERVAL '3 hours', NULL, NULL),
+    ('carlos.lopez@vendedor.com', 'labendicion@miscelanea.com', CURRENT_TIMESTAMP - INTERVAL '20 days', 'completed', 'reabastecimiento', 'Inventario revisado y actualizado.', CURRENT_TIMESTAMP - INTERVAL '20 days' + INTERVAL '2 hours 30 minutes', NULL, NULL),
+    ('ana.rodriguez@vendedor.com', 'lasalud@drogueria.com', CURRENT_TIMESTAMP - INTERVAL '4 days', 'completed', 'reabastecimiento', 'Visita realizada exitosamente.', CURRENT_TIMESTAMP - INTERVAL '4 days' + INTERVAL '1 hour 15 minutes', NULL, NULL),
+    
+    -- Más visitas pendientes
+    ('vendedor@digitaltwins.com', 'sanjose@farmacia.com', CURRENT_TIMESTAMP + INTERVAL '6 days', 'pending', 'reabastecimiento', 'Visita programada para próxima semana.', NULL, NULL, NULL),
+    ('juan.perez@vendedor.com', 'buenpan@panaderia.com', CURRENT_TIMESTAMP + INTERVAL '8 days', 'pending', 'reabastecimiento', 'Revisión de stock programada.', NULL, NULL, NULL),
+    ('maria.garcia@vendedor.com', 'elahorro@super.com', CURRENT_TIMESTAMP + INTERVAL '10 days', 'pending', 'reabastecimiento', 'Entrega de productos programada.', NULL, NULL, NULL)
+) AS v(seller_email, shopkeeper_email, scheduled_date, status, reason, notes, completed_at, cancelled_at, cancelled_reason)
+JOIN sellers s ON s.email = v.seller_email
+JOIN shopkeepers sk ON sk.email = v.shopkeeper_email
+WHERE NOT EXISTS (
+    SELECT 1 FROM visits 
+    WHERE visits.seller_id = s.id 
+    AND visits.shopkeeper_id = sk.id 
+    AND visits.scheduled_date = v.scheduled_date
+);
+
 -- Done
 
