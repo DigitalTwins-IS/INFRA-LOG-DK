@@ -41,6 +41,34 @@ make_backup() {
     echo "✅ Backup creado: $BACKUP_FILE"
 }
 
+# Función para verificar visitas
+verify_visits() {
+    echo ""
+    echo "📊 Verificando visitas insertadas..."
+    VISITAS_COUNT=$(docker exec postgres-db psql -U dgt_user -d digital_twins_db -t -c "SELECT COUNT(*) FROM visits;" 2>/dev/null | tr -d ' ' || echo "0")
+    
+    if [ "$VISITAS_COUNT" -gt "0" ]; then
+        echo "✅ $VISITAS_COUNT visitas encontradas"
+        echo ""
+        echo "   Distribución por estado:"
+        docker exec postgres-db psql -U dgt_user -d digital_twins_db -c "SELECT status, COUNT(*) as cantidad FROM visits GROUP BY status ORDER BY status;" 2>/dev/null
+        echo ""
+        echo "   Visitas por vendedor (top 5):"
+        docker exec postgres-db psql -U dgt_user -d digital_twins_db -c "SELECT s.name, COUNT(v.id) as visitas FROM visits v JOIN sellers s ON v.seller_id = s.id GROUP BY s.id, s.name ORDER BY visitas DESC LIMIT 5;" 2>/dev/null
+        return 0
+    else
+        echo "⚠️  No se encontraron visitas"
+        echo ""
+        echo "   Verificando dependencias..."
+        echo "   Sellers disponibles:"
+        docker exec postgres-db psql -U dgt_user -d digital_twins_db -c "SELECT id, email, name FROM sellers LIMIT 10;" 2>/dev/null
+        echo ""
+        echo "   Shopkeepers disponibles:"
+        docker exec postgres-db psql -U dgt_user -d digital_twins_db -c "SELECT id, email, name FROM shopkeepers LIMIT 10;" 2>/dev/null
+        return 1
+    fi
+}
+
 # Función para ejecutar script corregido (BD nueva)
 execute_new_db() {
     echo ""
@@ -69,22 +97,71 @@ execute_new_db() {
     $DOCKER_COMPOSE down
     
     echo "4️⃣  Eliminando volumen de PostgreSQL..."
+    # Intentar diferentes nombres de volumen comunes
     docker volume rm digital-twins-db-data 2>/dev/null || true
+    docker volume rm compose_postgres_data 2>/dev/null || true
+    docker volume rm infra-log-dk_postgres_data 2>/dev/null || true
+    # Buscar y eliminar cualquier volumen relacionado
+    docker volume ls | grep -i postgres | awk '{print $2}' | xargs -r docker volume rm 2>/dev/null || true
     
     echo "5️⃣  Recreando base de datos..."
     $DOCKER_COMPOSE up -d postgres-db
     
-    echo "6️⃣  Esperando a que PostgreSQL esté listo..."
-    sleep 5
+    echo "6️⃣  Esperando a que PostgreSQL esté listo y termine de ejecutar init.sql..."
+    for i in {1..30}; do
+        if docker exec postgres-db pg_isready -U dgt_user -d digital_twins_db > /dev/null 2>&1; then
+            echo "✅ PostgreSQL está listo"
+            # Esperar adicional para que termine de ejecutar init.sql
+            echo "   Esperando a que termine la ejecución del script SQL..."
+            sleep 10
+            break
+        fi
+        echo "   Esperando... ($i/30)"
+        sleep 2
+    done
     
-    echo "7️⃣  Verificando ejecución..."
-    docker logs postgres-db | tail -20
+    # Verificar que el script terminó de ejecutarse
+    echo "   Verificando que el script SQL terminó..."
+    for i in {1..20}; do
+        VISITAS_COUNT=$(docker exec postgres-db psql -U dgt_user -d digital_twins_db -t -c "SELECT COUNT(*) FROM visits;" 2>/dev/null | tr -d ' ' || echo "0")
+        if [ "$VISITAS_COUNT" -gt "0" ]; then
+            echo "✅ Script SQL completado (encontradas $VISITAS_COUNT visitas)"
+            break
+        fi
+        if [ "$i" -eq "20" ]; then
+            echo "⚠️  El script puede estar aún ejecutándose. Las visitas se insertarán en segundo plano."
+        else
+            echo "   Esperando inserción de datos... ($i/20)"
+            sleep 3
+        fi
+    done
+    
+    echo ""
+    echo "7️⃣  Verificando ejecución del script..."
+    docker logs postgres-db | tail -30
+    
+    echo ""
+    echo "8️⃣  Verificando datos insertados..."
+    echo "   - Usuarios:"
+    docker exec postgres-db psql -U dgt_user -d digital_twins_db -t -c "SELECT COUNT(*) FROM users;" 2>/dev/null | xargs
+    echo "   - Vendedores:"
+    docker exec postgres-db psql -U dgt_user -d digital_twins_db -t -c "SELECT COUNT(*) FROM sellers;" 2>/dev/null | xargs
+    echo "   - Tenderos:"
+    docker exec postgres-db psql -U dgt_user -d digital_twins_db -t -c "SELECT COUNT(*) FROM shopkeepers;" 2>/dev/null | xargs
+    echo "   - Productos:"
+    docker exec postgres-db psql -U dgt_user -d digital_twins_db -t -c "SELECT COUNT(*) FROM products;" 2>/dev/null | xargs
+    echo "   - Inventarios:"
+    docker exec postgres-db psql -U dgt_user -d digital_twins_db -t -c "SELECT COUNT(*) FROM inventories;" 2>/dev/null | xargs
+    
+    # Verificar visitas con función dedicada
+    verify_visits
     
     echo ""
     echo "✅ Proceso completado!"
     echo ""
     echo "Verifica con:"
-    echo "  docker exec -it postgres-db psql -U dgt_user -d digital_twins_db -c '\\d inventories'"
+    echo "  docker exec -it postgres-db psql -U dgt_user -d digital_twins_db -c 'SELECT COUNT(*) FROM visits;'"
+    echo "  docker exec -it postgres-db psql -U dgt_user -d digital_twins_db -c 'SELECT status, COUNT(*) FROM visits GROUP BY status;'"
 }
 
 # Función para ejecutar migración (BD existente)
@@ -125,13 +202,39 @@ execute_manual() {
     
     echo ""
     echo "📝 Ejecutando init_corrected.sql..."
+    
+    # Verificar que el contenedor esté corriendo
+    if ! docker ps | grep -q postgres-db; then
+        echo "❌ Error: El contenedor postgres-db no está corriendo"
+        echo "   Ejecuta primero: cd ../compose && docker-compose up -d postgres-db"
+        exit 1
+    fi
+    
+    # Ejecutar el script
     docker exec -i postgres-db psql -U dgt_user -d digital_twins_db < init_corrected.sql
     
     echo ""
     echo "✅ Script ejecutado!"
     echo ""
+    echo "📊 Verificando datos insertados..."
+    echo "   - Usuarios:"
+    docker exec postgres-db psql -U dgt_user -d digital_twins_db -t -c "SELECT COUNT(*) FROM users;" 2>/dev/null | xargs
+    echo "   - Vendedores:"
+    docker exec postgres-db psql -U dgt_user -d digital_twins_db -t -c "SELECT COUNT(*) FROM sellers;" 2>/dev/null | xargs
+    echo "   - Tenderos:"
+    docker exec postgres-db psql -U dgt_user -d digital_twins_db -t -c "SELECT COUNT(*) FROM shopkeepers;" 2>/dev/null | xargs
+    echo "   - Productos:"
+    docker exec postgres-db psql -U dgt_user -d digital_twins_db -t -c "SELECT COUNT(*) FROM products;" 2>/dev/null | xargs
+    echo "   - Inventarios:"
+    docker exec postgres-db psql -U dgt_user -d digital_twins_db -t -c "SELECT COUNT(*) FROM inventories;" 2>/dev/null | xargs
+    
+    # Verificar visitas con función dedicada
+    verify_visits
+    
+    echo ""
     echo "Verifica con:"
-    echo "  docker exec -it postgres-db psql -U dgt_user -d digital_twins_db -c '\\d inventories'"
+    echo "  docker exec -it postgres-db psql -U dgt_user -d digital_twins_db -c 'SELECT COUNT(*) FROM visits;'"
+    echo "  docker exec -it postgres-db psql -U dgt_user -d digital_twins_db -c 'SELECT status, COUNT(*) FROM visits GROUP BY status;'"
 }
 
 # Menú principal
