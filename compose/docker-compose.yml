@@ -104,6 +104,14 @@ services:
       SERVICE_HOST: 0.0.0.0
       SERVICE_PORT: 8000
       MAX_SHOPKEEPERS_PER_SELLER: ${MAX_SHOPKEEPERS_PER_SELLER:-80}
+      OPENROUTE_API_KEY: ${OPENROUTE_API_KEY:-}
+      OPENROUTE_ENABLED: ${OPENROUTE_ENABLED:-false}
+      OPENROUTE_BASE_URL: ${OPENROUTE_BASE_URL:-https://api.openrouteservice.org}
+      NOMINATIM_ENABLED: ${NOMINATIM_ENABLED:-true}
+      NOMINATIM_USER_AGENT: ${NOMINATIM_USER_AGENT:-DigitalTwins-IS/1.0}
+      ROUTE_CACHE_TTL_HOURS: ${ROUTE_CACHE_TTL_HOURS:-24}
+      ROUTE_CACHE_MAX_SIZE: ${ROUTE_CACHE_MAX_SIZE:-1000}
+      
     ports:
       - "8002:8000"
     depends_on:
@@ -136,6 +144,7 @@ services:
       MS_AUTH_URL: http://ms-auth-py:8000
       SERVICE_HOST: 0.0.0.0
       SERVICE_PORT: 8000
+
     ports:
       - "8005:8000"
     depends_on:

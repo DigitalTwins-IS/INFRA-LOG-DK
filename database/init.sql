@@ -197,6 +197,21 @@ CREATE TABLE IF NOT EXISTS seller_incidents (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- HU18: Tabla de ubicaciones de vendedores - Tracking en tiempo real
+CREATE TABLE IF NOT EXISTS seller_locations (
+    id SERIAL PRIMARY KEY,
+    seller_id INTEGER NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
+    latitude NUMERIC(10, 8) NOT NULL CHECK (latitude BETWEEN -90 AND 90),
+    longitude NUMERIC(11, 8) NOT NULL CHECK (longitude BETWEEN -180 AND 180),
+    accuracy NUMERIC(10, 2),
+    speed NUMERIC(10, 2),
+    heading NUMERIC(5, 2),
+    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'offline')),
+    battery_level INTEGER CHECK (battery_level BETWEEN 0 AND 100),
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 4) Triggers that use update_updated_at_column or update_shopkeeper_location
 CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -265,6 +280,11 @@ CREATE INDEX IF NOT EXISTS idx_visits_scheduled_date ON visits(scheduled_date);
 CREATE INDEX IF NOT EXISTS idx_visits_status ON visits(status);
 CREATE INDEX IF NOT EXISTS idx_visits_seller_status ON visits(seller_id, status);
 CREATE INDEX IF NOT EXISTS idx_seller_incidents_seller_id ON seller_incidents(seller_id);
+-- HU18: Índices para seller_locations
+CREATE INDEX IF NOT EXISTS idx_seller_locations_seller_id ON seller_locations(seller_id);
+CREATE INDEX IF NOT EXISTS idx_seller_locations_status ON seller_locations(status);
+CREATE INDEX IF NOT EXISTS idx_seller_locations_timestamp ON seller_locations(timestamp);
+CREATE INDEX IF NOT EXISTS idx_seller_locations_seller_timestamp ON seller_locations(seller_id, timestamp DESC);
 
 -- 6) Views
 CREATE OR REPLACE VIEW v_sellers_full AS
@@ -616,19 +636,21 @@ SET
     product_name = EXCLUDED.product_name,
     product_category = EXCLUDED.product_category;
 
+<<<<<<< Updated upstream
 -- Visitas de muestra para review
 -- Visitas con diferentes estados y fechas para demostración
+-- NOTA: Este INSERT solo funciona si los sellers y shopkeepers ya existen en la BD
 INSERT INTO visits (seller_id, shopkeeper_id, scheduled_date, status, reason, notes, completed_at, cancelled_at, cancelled_reason) 
 SELECT 
-    s.id as seller_id,
-    sk.id as shopkeeper_id,
-    scheduled_date,
-    status,
-    reason,
-    notes,
-    completed_at,
-    cancelled_at,
-    cancelled_reason
+    (SELECT id FROM sellers WHERE email = v.seller_email LIMIT 1) as seller_id,
+    (SELECT id FROM shopkeepers WHERE email = v.shopkeeper_email LIMIT 1) as shopkeeper_id,
+    v.scheduled_date,
+    v.status,
+    v.reason,
+    v.notes,
+    v.completed_at,
+    v.cancelled_at,
+    v.cancelled_reason
 FROM (VALUES 
     -- Visitas completadas (pasadas)
     ('vendedor@digitaltwins.com', 'laesperanza@tienda.com', CURRENT_TIMESTAMP - INTERVAL '5 days', 'completed', 'reabastecimiento', 'Visita completada exitosamente. Stock actualizado.', CURRENT_TIMESTAMP - INTERVAL '5 days' + INTERVAL '2 hours', NULL, NULL),
@@ -801,14 +823,156 @@ FROM (VALUES
     ('ana.rodriguez@vendedor.com', 'constructor@ferreteria.com', CURRENT_TIMESTAMP - INTERVAL '8 days', 'cancelled', 'reabastecimiento', 'Visita cancelada por solicitud del tendero.', NULL, CURRENT_TIMESTAMP - INTERVAL '8 days' + INTERVAL '30 minutes', 'Tendero no disponible en la fecha programada'),
     ('pedro.martinez@vendedor.com', 'labendicion@miscelanea.com', CURRENT_TIMESTAMP - INTERVAL '10 days', 'cancelled', 'reabastecimiento', 'Cancelación por problemas de logística.', NULL, CURRENT_TIMESTAMP - INTERVAL '10 days' + INTERVAL '1 hour', 'Problemas de transporte')
 ) AS v(seller_email, shopkeeper_email, scheduled_date, status, reason, notes, completed_at, cancelled_at, cancelled_reason)
-JOIN sellers s ON s.email = v.seller_email
-JOIN shopkeepers sk ON sk.email = v.shopkeeper_email
-WHERE NOT EXISTS (
+WHERE (SELECT id FROM sellers WHERE email = v.seller_email LIMIT 1) IS NOT NULL
+  AND (SELECT id FROM shopkeepers WHERE email = v.shopkeeper_email LIMIT 1) IS NOT NULL
+  AND NOT EXISTS (
     SELECT 1 FROM visits 
-    WHERE visits.seller_id = s.id 
-    AND visits.shopkeeper_id = sk.id 
+    WHERE visits.seller_id = (SELECT id FROM sellers WHERE email = v.seller_email LIMIT 1)
+    AND visits.shopkeeper_id = (SELECT id FROM shopkeepers WHERE email = v.shopkeeper_email LIMIT 1)
     AND visits.scheduled_date = v.scheduled_date
+  );
+
+-- ============================================================================
+-- FIN DEL SCRIPT
+-- ============================================================================
+-- 
+-- Verificación de datos insertados:
+-- 
+-- SELECT COUNT(*) FROM visits;
+-- SELECT status, COUNT(*) FROM visits GROUP BY status;
+-- SELECT s.name, COUNT(v.id) as visitas 
+-- FROM visits v 
+-- JOIN sellers s ON v.seller_id = s.id 
+-- GROUP BY s.id, s.name 
+-- ORDER BY visitas DESC;
+--
+-- Si no se insertaron visitas, verificar:
+-- 1. Que los sellers existan: SELECT id, email FROM sellers;
+-- 2. Que los shopkeepers existan: SELECT id, email FROM shopkeepers;
+-- 3. Que las asignaciones existan: SELECT * FROM assignments WHERE is_active = TRUE;
+--
+=======
+-- =====================================================
+-- HU14: Sistema de Tracking y Geocoding
+-- =====================================================
+
+-- Tabla de ubicaciones de vendedores (tracking)
+CREATE TABLE IF NOT EXISTS seller_locations (
+    id SERIAL PRIMARY KEY,
+    seller_id INTEGER NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
+    latitude DECIMAL(10, 8) NOT NULL,
+    longitude DECIMAL(11, 8) NOT NULL,
+    accuracy DECIMAL(10, 2),
+    speed DECIMAL(10, 2),
+    heading DECIMAL(5, 2),
+    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'offline')),
+    battery_level INTEGER CHECK (battery_level BETWEEN 0 AND 100),
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT check_latitude CHECK (latitude BETWEEN -90 AND 90),
+    CONSTRAINT check_longitude CHECK (longitude BETWEEN -180 AND 180)
 );
 
+-- Índices para rendimiento
+CREATE INDEX idx_seller_locations_seller ON seller_locations(seller_id);
+CREATE INDEX idx_seller_locations_timestamp ON seller_locations(timestamp DESC);
+CREATE INDEX idx_seller_locations_status ON seller_locations(status);
+CREATE INDEX idx_seller_locations_composite ON seller_locations(seller_id, timestamp DESC);
+
+-- Vista para última ubicación de cada vendedor
+CREATE OR REPLACE VIEW v_seller_current_location AS
+SELECT DISTINCT ON (seller_id)
+    sl.id,
+    sl.seller_id,
+    sl.latitude,
+    sl.longitude,
+    sl.accuracy,
+    sl.speed,
+    sl.heading,
+    sl.status,
+    sl.battery_level,
+    sl.timestamp,
+    s.name as seller_name,
+    s.phone as seller_phone,
+    s.email as seller_email,
+    s.zone_id,
+    z.name as zone_name,
+    c.name as city_name
+FROM seller_locations sl
+JOIN sellers s ON sl.seller_id = s.id
+LEFT JOIN zones z ON s.zone_id = z.id
+LEFT JOIN cities c ON z.city_id = c.id
+WHERE sl.timestamp > NOW() - INTERVAL '24 hours'
+ORDER BY sl.seller_id, sl.timestamp DESC;
+
+-- Tabla de caché de geocodificación
+CREATE TABLE IF NOT EXISTS geocoding_cache (
+    id SERIAL PRIMARY KEY,
+    address TEXT NOT NULL,
+    city VARCHAR(100) NOT NULL,
+    country VARCHAR(100) DEFAULT 'Colombia',
+    latitude DECIMAL(10, 8) NOT NULL,
+    longitude DECIMAL(11, 8) NOT NULL,
+    display_name TEXT,
+    confidence DECIMAL(3, 2),
+    provider VARCHAR(50) DEFAULT 'nominatim',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    last_used TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    usage_count INTEGER DEFAULT 1,
+    UNIQUE(address, city, country)
+);
+
+CREATE INDEX idx_geocoding_cache_lookup ON geocoding_cache(address, city);
+CREATE INDEX idx_geocoding_cache_coords ON geocoding_cache(latitude, longitude);
+
+-- Función para limpiar ubicaciones antiguas (> 7 días)
+CREATE OR REPLACE FUNCTION cleanup_old_locations()
+RETURNS INTEGER AS $$
+DECLARE
+    deleted_count INTEGER;
+BEGIN
+    DELETE FROM seller_locations 
+    WHERE timestamp < NOW() - INTERVAL '7 days';
+    
+    GET DIAGNOSTICS deleted_count = ROW_COUNT;
+    RETURN deleted_count;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Función para actualizar cache de geocoding
+CREATE OR REPLACE FUNCTION update_geocoding_usage()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.last_used = CURRENT_TIMESTAMP;
+    NEW.usage_count = NEW.usage_count + 1;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_update_geocoding_usage
+    BEFORE UPDATE ON geocoding_cache
+    FOR EACH ROW
+    EXECUTE FUNCTION update_geocoding_usage();
+
+-- Comentarios
+COMMENT ON TABLE seller_locations IS 'HU14: Ubicaciones históricas de vendedores para tracking en tiempo real';
+COMMENT ON TABLE geocoding_cache IS 'HU14: Caché de resultados de geocodificación para reducir llamadas a API';
+COMMENT ON VIEW v_seller_current_location IS 'HU14: Última ubicación conocida de cada vendedor (últimas 24h)';
+COMMENT ON FUNCTION cleanup_old_locations() IS 'HU14: Limpia ubicaciones de más de 7 días';
+
+-- Datos de prueba (ubicaciones simuladas en Bogotá)
+INSERT INTO seller_locations (seller_id, latitude, longitude, speed, status, battery_level) 
+SELECT 
+    id,
+    4.6097 + (RANDOM() * 0.1 - 0.05),
+    -74.0817 + (RANDOM() * 0.1 - 0.05),
+    RANDOM() * 40,
+    'active',
+    FLOOR(RANDOM() * 100)
+FROM sellers
+WHERE is_active = true
+LIMIT 10;
+
+>>>>>>> Stashed changes
 -- Done
 
